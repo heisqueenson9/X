@@ -242,6 +242,29 @@ export async function POST(req: NextRequest) {
     const validModes = ['academic', 'standard', 'formal', 'simple', 'flowing', 'informal', 'expand', 'shorten'];
     const selectedMode = validModes.includes(mode) ? mode : 'academic';
 
+    // CHECK CACHE
+    try {
+      await connectDB();
+      const cachedRecord = await Text.findOne({
+        originalText: sanitizedText,
+        mode: selectedMode,
+      }).lean() as any;
+
+      if (cachedRecord && cachedRecord.paraphrasedText) {
+        return NextResponse.json({
+          success: true,
+          paraphrasedText: cachedRecord.paraphrasedText,
+          sessionId: cachedRecord.sessionId || randomUUID(),
+          stats: cachedRecord.stats,
+          wordCount: cachedRecord.paraphrasedText.split(/\s+/).length,
+          cached: true
+        });
+      }
+    } catch (cacheErr) {
+      console.warn('Cache lookup error:', cacheErr);
+    }
+
+
     // Split into chunks and paraphrase
     const chunks = splitIntoChunks(sanitizedText, 800);
     const paraphrasedChunks: string[] = [];

@@ -30,6 +30,16 @@ function sanitizeInput(text: string): string {
     .substring(0, 500000); // 500K char limit
 }
 
+  // Split text into chunks for summarization
+function splitIntoChunks(text: string, chunkSize = 800): string[] {
+  const words = text.split(/\s+/);
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += chunkSize) {
+    chunks.push(words.slice(i, i + chunkSize).join(' '));
+  }
+  return chunks;
+}
+
 // Summarize using BART Large CNN via HuggingFace
 async function summarizeWithBART(text: string, summaryLength: 'short' | 'medium' | 'long' = 'medium'): Promise<string> {
   const huggingFaceToken = process.env.HUGGINGFACE_API_KEY;
@@ -124,8 +134,42 @@ export async function POST(req: NextRequest) {
     const validLengths = ['short', 'medium', 'long'];
     const selectedLength = validLengths.includes(length) ? length : 'medium';
 
-    // Generate summary
-    const summary = await summarizeWithBART(sanitizedText, selectedLength as 'short' | 'medium' | 'long');
+    const modeName = `summary_${selectedLength}`;
+
+    // CHECK CACHE
+    try {
+      await connectDB();
+      const cachedRecord = (await Text.findOne({
+        originalText: sanitizedText,
+        mode: modeName,
+      }).lean()) as any;
+
+      if (cachedRecord && cachedRecord.paraphrasedText) {
+        return NextResponse.json({
+          success: true,
+          paraphrasedText: cachedRecord.paraphrasedText,
+          summary: cachedRecord.paraphrasedText,
+          sessionId: cachedRecord.sessionId || randomUUID(),
+          stats: cachedRecord.stats,
+          wordCount: cachedRecord.paraphrasedText.split(/\s+/).length,
+          originalWordCount: sanitizedText.split(/\s+/).length,
+          cached: true
+        });
+      }
+    } catch (cacheErr) {
+      console.warn('Cache lookup error:', cacheErr);
+    }
+
+    // Process text in chunks
+    const chunks = splitIntoChunks(sanitizedText, 800);
+    const summaryChunks: string[] = [];
+
+    for (const chunk of chunks) {
+      const summaryPart = await summarizeWithBART(chunk, selectedLength as 'short' | 'medium' | 'long');
+      summaryChunks.push(summaryPart);
+    }
+
+    const summary = summaryChunks.join('\n\n');
 
     const sessionId = randomUUID();
     const stats = {

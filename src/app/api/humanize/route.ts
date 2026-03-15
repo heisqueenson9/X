@@ -181,6 +181,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Text is too short. Please enter at least 50 characters.' }, { status: 400 });
     }
 
+    // CHECK CACHE
+    try {
+      await connectDB();
+      const cachedRecord = await Text.findOne({
+        originalText: sanitizedText,
+        mode: 'humanize',
+      }).lean() as any;
+
+      if (cachedRecord && cachedRecord.paraphrasedText) {
+        return NextResponse.json({
+          success: true,
+          paraphrasedText: cachedRecord.paraphrasedText,
+          humanizedText: cachedRecord.paraphrasedText,
+          sessionId: (cachedRecord as any).sessionId || randomUUID(),
+          stats: cachedRecord.stats,
+          wordCount: cachedRecord.paraphrasedText.split(/\s+/).length,
+          message: 'Text has been humanized and made more conversational',
+          cached: true
+        });
+      }
+    } catch (cacheErr) {
+      console.warn('Cache lookup error:', cacheErr);
+    }
+
+
     // Process text in chunks
     const chunks = splitIntoChunks(sanitizedText, 800);
     const humanizedChunks: string[] = [];
