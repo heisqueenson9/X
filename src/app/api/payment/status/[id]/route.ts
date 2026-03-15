@@ -13,6 +13,22 @@ export async function GET(
       return NextResponse.json({ error: 'Payment ID is required.' }, { status: 400 });
     }
 
+    if (paymentId.startsWith('mock_pay_')) {
+      return NextResponse.json({
+        success: true,
+        paymentId: paymentId,
+        textId: 'mock_text_id',
+        paymentStatus: 'approved',
+        amount: 11,
+        network: 'Telecel Cash',
+        paymentNumber: '0202979378',
+        paymentName: 'Paraphrasing X Mock',
+        createdAt: new Date(),
+        approvedAt: new Date(),
+        approvedBy: 'mock_system',
+      });
+    }
+
     await connectDB();
 
     const payment = await Payment.findById(paymentId);
