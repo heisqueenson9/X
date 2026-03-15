@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import Payment from '@/models/Payment';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
 
 // Rate limiting
 const requestCounts = new Map<string, { count: number; resetAt: number }>();
@@ -94,34 +91,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Create unique filename with timestamp
-    const timestamp = Date.now();
-    const uuid = randomUUID().substring(0, 8);
-    const ext = file.name.toLowerCase().split('.').pop();
-    const filename = `payment_${safeTextId}_${timestamp}_${uuid}.${ext}`;
-    
-    // Store in public/uploads/payments so it can be served statically
-    const uploadsDir = join(process.cwd(), 'public', 'uploads', 'payments');
-
-    // Create directory if it doesn't exist
-    try {
-      await mkdir(uploadsDir, { recursive: true });
-    } catch (err) {
-      console.error('Directory creation error:', err);
-    }
-
-    // Write file
-    const filepath = join(uploadsDir, filename);
+    // Convert file directly to Base64 memory buffer to support Vercel Serverless (read-only filesystem)
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    await writeFile(filepath, buffer);
+    const base64Data = `data:${file.type};base64,${buffer.toString('base64')}`;
 
     // Connect to DB and save payment record
     await connectDB();
 
     const payment = await Payment.create({
       textId,
-      screenshotPath: `/uploads/payments/${filename}`,
+      screenshotPath: base64Data, // Storing directly in DB for Vercel compatibility
       paymentStatus: 'approved',
       amount: 11,
       network: 'Telecel Cash',
@@ -134,7 +114,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       paymentId: payment._id.toString(),
-      screenshotPath: `/uploads/payments/${filename}`,
       status: 'approved',
       message: 'Payment screenshot uploaded and verified successfully.',
     });
